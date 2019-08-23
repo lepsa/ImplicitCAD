@@ -35,7 +35,9 @@ Library
                   blaze-svg,
                   storable-endian,
                   JuicyPixels,
-                  transformers
+                  transformers,
+                  scientific,
+                  parsers
 
     Ghc-options:
                 -O2
@@ -57,7 +59,7 @@ Library
                 -Wimplicit-prelude
                 -Wredundant-constraints
                 -Wall-missed-specialisations
-                -Werror
+                -- -Werror
     Exposed-modules:
                     Graphics.Implicit
                     Graphics.Implicit.Definitions

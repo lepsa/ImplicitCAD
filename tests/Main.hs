@@ -9,7 +9,7 @@ import Prelude (($), IO)
 import Test.Hspec(hspec, describe)
 
 -- the test forstatements.
-import ParserSpec.Statement(statementSpec)
+-- import ParserSpec.Statement(statementSpec)
 
 -- the test for expressions.
 import ParserSpec.Expr(exprSpec)
@@ -19,4 +19,4 @@ main = hspec $ do
   -- run tests against the expression engine.
   describe "expressions" exprSpec
   -- and now, against the statement engine.
-  describe "statements" statementSpec
+  -- describe "statements" statementSpec

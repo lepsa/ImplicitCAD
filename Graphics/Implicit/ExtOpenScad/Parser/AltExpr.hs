@@ -46,7 +46,7 @@ parenthesizedExpr = "parenthesized expression" ?:
 -- parse expressions that don't associate, either because they are not operators or because they are operators
 -- that contain the expressions they operate on in start and end tokens, like parentheses, and no other operator can associate with their expressions.
 nonAssociativeExpr :: GenParser Char st Expr
-nonAssociativeExpr = do
+nonAssociativeExpr = 
         boolean
     <|> scadUndefined
     <|> number

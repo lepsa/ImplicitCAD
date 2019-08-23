@@ -3,134 +3,130 @@
 -- Released under the GNU AGPLV3+, see LICENSE
 
 -- Allow us to use explicit foralls when writing function type declarations.
-{-# LANGUAGE ExplicitForAll #-}
+module Graphics.Implicit.ExtOpenScad.Parser.Util
+  ( (*<|>)
+  , (?:)
+  , tryMany
+  , patternMatcher
+  , sourcePosition
+  , number
+  , variable
+  , boolean
+  , scadString
+  , scadUndefined
+  ) where
 
--- FIXME: required. why?
-{-# LANGUAGE KindSignatures, FlexibleContexts #-}
-
-module Graphics.Implicit.ExtOpenScad.Parser.Util ((*<|>), (?:), tryMany, patternMatcher, sourcePosition, number, variable, boolean, scadString, scadUndefined) where
-
-import Prelude (String, Char, ($), foldl1, map, (.), return, (>>), Bool(True, False), read, (**), (*), (==), (++))
-
-import Text.Parsec (SourcePos, (<|>), (<?>), try, char, sepBy, noneOf, string, many, digit, many1, optional, choice, option, oneOf)
-
-import Text.Parsec.String (GenParser)
-
-import qualified Text.Parsec as P (sourceLine, sourceColumn, sourceName)
-
-import Text.Parsec.Prim (ParsecT)
-
-import Data.Functor.Identity (Identity)
-
-import Graphics.Implicit.ExtOpenScad.Definitions (Pattern(Wild, Name, ListP), SourcePosition(SourcePosition), Symbol(Symbol), Expr(LitE, Var), OVal(ONum, OString, OBool, OUndefined))
-
-import Graphics.Implicit.Definitions (toFastℕ)
-
--- The lexer.
-import Graphics.Implicit.ExtOpenScad.Parser.Lexer (matchIdentifier, matchTok, matchUndef, matchTrue, matchFalse, whiteSpace)
-
-import Data.Kind (Type)
+import           Control.Applicative                        ((<**>), (<|>))
+import           Data.Char                                  (digitToInt)
+import           Data.Foldable                              (foldl')
+import           Data.Functor                               (($>))
+import qualified Data.Scientific                            as Sci
+import           Graphics.Implicit.Definitions              (toFastℕ)
+import           Graphics.Implicit.ExtOpenScad.Definitions  (Expr (LitE, Var), OVal (OBool, ONum, OString, OUndefined),
+                                                             Pattern (ListP, Name, Wild),
+                                                             SourcePosition (SourcePosition),
+                                                             Symbol (Symbol))
+import           Graphics.Implicit.ExtOpenScad.Parser.Lexer (matchFalse,
+                                                             matchIdentifier,
+                                                             matchTok,
+                                                             matchTrue,
+                                                             matchUndef)
+import           Prelude                                    (Char, String,
+                                                             either, fmap,
+                                                             foldl1,
+                                                             fromInteger,
+                                                             fromIntegral, id,
+                                                             map, negate, pure,
+                                                             ($), (*), (*>),
+                                                             (+), (-), (.),
+                                                             (<$), (<$>), (<*),
+                                                             (<*>))
+import           Text.Parsec                                (SourcePos,
+                                                             sourceColumn,
+                                                             sourceLine,
+                                                             sourceName)
+import           Text.Parsec.String                         (GenParser)
+import           Text.Parser.Char                           (char, digit,
+                                                             noneOf, oneOf,
+                                                             string)
+import           Text.Parser.Combinators                    (Parsing, between,
+                                                             choice, many,
+                                                             option, sepBy,
+                                                             some, try, (<?>))
+import           Text.Parser.Token                          (decimal, highlight,
+                                                             integerOrDouble,
+                                                             whiteSpace)
+import           Text.Parser.Token.Highlight                (Highlight (Operator))
 
 infixr 1 *<|>
-(*<|>) :: forall u a tok. GenParser tok u a -> ParsecT [tok] u Identity a -> ParsecT [tok] u Identity a
+(*<|>) :: Parsing m => m a -> m a -> m a
 a *<|> b = try a <|> b
 
 infixr 2 ?:
-(?:) :: forall s u (m :: Type -> Type) a. String -> ParsecT s u m a -> ParsecT s u m a
+(?:) :: Parsing m => String -> m a -> m a
 l ?: p = p <?> l
 
-tryMany :: forall u a tok. [GenParser tok u a] -> ParsecT [tok] u Identity a
+tryMany :: Parsing m => [m a] -> m a
 tryMany = foldl1 (<|>) . map try
 
 -- | A pattern parser
 patternMatcher :: GenParser Char st Pattern
 patternMatcher =
-    (do
-        _ <- char '_'
-        return Wild
-    ) <|> {-( do
-        a <- literal
-        return $ \obj ->
-            if obj == (a undefined)
-            then Just (Map.empty)
-            else Nothing
-    ) <|> -} ( do
-        symb <- matchIdentifier
-        return $ Name (Symbol symb)
-    ) <|> ( do
-        _ <- matchTok '['
-        components <- patternMatcher `sepBy` try (matchTok ',')
-        _ <- matchTok ']'
-        return $ ListP components
-    )
+    (Wild <$ char '_') <|>
+    (Name . Symbol <$> matchIdentifier) <|>
+    (ListP <$> between (matchTok '[') (matchTok ']') (patternMatcher `sepBy` try (matchTok ',')))
 
 -- expression parsers
 
 -- | Parse a number.
+-- number :: TokenParsing m => m Expr
+-- number = "number" ?: LitE . ONum <$> double
 number :: GenParser Char st Expr
-number = ("number" ?:) $ do
-  h <- choice
-       [
-         do
-           a <- many1 digit
-           b <- option "" (
-             do
-               c <- char '.' >> many1 digit
-               return ("." ++ c)
-             )
-           return (a ++ b)
-        ,
-        do
-          i <- char '.' >> many1 digit
-          return ("0." ++ i)
-        ]
-  d <- option "0"
-       (
-         oneOf "eE" >> choice
-         [do
-             f <- char '-' >> many1 digit
-             return ('-':f)
-          ,
-            optional (char '+') >> many1 digit
-          ]
-       )
-  _ <- whiteSpace
-  return . LitE $ ONum $ if d == "0"
-                         then read h
-                         else read h * (10 ** read d)
+number = ("number" ?:) $
+  -- Very similar to `double` from parsers, but can handle an implicit leading 0
+  LitE . ONum <$> choice
+    [ either fromIntegral id <$> integerOrDouble
+    , fmap Sci.toRealFloat $ pure 0 <**> fractExponent
+    ]
+  <* whiteSpace
+  where
+    sign = highlight Operator $ negate <$ char '-' <|> id <$ char '+' <|> pure id
+    fractExponent = (\fract expo n -> (fromInteger n + fract) * expo) <$> fraction <*> option 1 exponent'
+                <|> (\expo n -> fromInteger n * expo) <$> exponent'
+      where
+        fraction = foldl' op 0 <$> (char '.' *> (some digit <?> "fraction"))
+        op f d = f + Sci.scientific (fromIntegral (digitToInt d)) (Sci.base10Exponent f - 1)
+        exponent' = ((\f e -> power (f e)) <$ oneOf "eE" <*> sign <*> (decimal <?> "exponent")) <?> "exponent"
+        power = Sci.scientific 1 . fromInteger
+
 
 -- | Parse a variable reference.
 --   NOTE: abused by the parser for function calls.
 variable :: GenParser Char st Expr
-variable = ("variable" ?:) $ do
-  a <- matchIdentifier
-  return (Var (Symbol a))
+variable = "variable" ?: Var . Symbol <$> matchIdentifier
 
 -- | Parse a true or false value.
 boolean :: GenParser Char st Expr
-boolean = ("boolean" ?:) $ do
-  b  <-      (matchTrue  >> return True )
-        *<|> (matchFalse >> return False)
-  return . LitE $ OBool b
+boolean = "boolean" ?: LitE . OBool <$> (matchTrue *<|> matchFalse)
 
 -- | Parse a quoted string.
 --   FIXME: no \u unicode support?
 scadString :: GenParser Char st Expr
-scadString = ("string" ?:) $ do
-  _ <- char '"'
-  strlit <-  many $ (string "\\\"" >> return '\"')
-               *<|> (string "\\n" >> return '\n')
-               *<|> (string "\\r" >> return '\r')
-               *<|> (string "\\t" >> return '\t')
-               *<|> (string "\\\\" >> return '\\')
-               *<|>  noneOf "\"\n"
-  _ <- matchTok '"'
-  return . LitE $ OString strlit
+scadString = "string" ?: LitE . OString <$>
+  between
+  (char '"')
+  (matchTok '"')
+  (many $
+    (string "\\\"" $> '\"') *<|>
+    (string "\\n"  $> '\n') *<|>
+    (string "\\r"  $> '\r') *<|>
+    (string "\\t"  $> '\t') *<|>
+    (string "\\\\" $> '\\') *<|>
+     noneOf "\"\n"
+  )
 
 scadUndefined :: GenParser Char st Expr
-scadUndefined = ("undefined" ?:) $ do
-  _ <- matchUndef
-  return . LitE $ OUndefined
+scadUndefined = "undefined" ?: LitE OUndefined <$ matchUndef
 
 sourcePosition :: SourcePos -> SourcePosition
-sourcePosition pos = SourcePosition (toFastℕ $ P.sourceLine pos) (toFastℕ $ P.sourceColumn pos) (P.sourceName pos)
+sourcePosition pos = SourcePosition (toFastℕ $ sourceLine pos) (toFastℕ $ sourceColumn pos) $ sourceName pos

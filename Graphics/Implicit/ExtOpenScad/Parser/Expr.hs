@@ -8,21 +8,49 @@
 -- A parser for a numeric expressions.
 module Graphics.Implicit.ExtOpenScad.Parser.Expr(expr0) where
 
-import Prelude (Char, Maybe(Nothing, Just), String, (.), (>>), return, ($), (++), id, foldl, map, foldl1, unzip, tail, zipWith3, foldr, (==), length, mod, head, (&&))
+import           Prelude                                    (Char, Maybe (Just, Nothing),
+                                                             String, foldl,
+                                                             foldl1, foldr,
+                                                             head, id, length,
+                                                             map, mod, return,
+                                                             tail, unzip,
+                                                             zipWith3, ($),
+                                                             (&&), (++), (.),
+                                                             (==), (>>))
 
 -- The parsec parsing library.
-import Text.Parsec (oneOf, string, many1, many, sepBy, sepBy1, optionMaybe, try, option)
+import           Text.Parsec                                (many, many1, oneOf,
+                                                             option,
+                                                             optionMaybe, sepBy,
+                                                             sepBy1, string,
+                                                             try)
 
-import Text.Parsec.String (GenParser)
+import           Text.Parsec.String                         (GenParser)
 
-import Graphics.Implicit.ExtOpenScad.Definitions (Expr(LamE, LitE, ListE, (:$)), OVal(ONum, OUndefined), collector, Symbol(Symbol))
+import           Graphics.Implicit.ExtOpenScad.Definitions  (Expr ((:$), LamE, ListE, LitE),
+                                                             OVal (ONum, OUndefined),
+                                                             Symbol (Symbol),
+                                                             collector)
 
-import qualified Graphics.Implicit.ExtOpenScad.Definitions as GIED (Expr(Var), Pattern(Name))
+import qualified Graphics.Implicit.ExtOpenScad.Definitions  as GIED (Expr (Var), Pattern (Name))
 
-import Graphics.Implicit.ExtOpenScad.Parser.Util ((?:), (*<|>), number, boolean, scadString, scadUndefined, variable)
+import           Graphics.Implicit.ExtOpenScad.Parser.Util  (boolean, number,
+                                                             scadString,
+                                                             scadUndefined,
+                                                             variable, (*<|>),
+                                                             (?:))
 
 -- The lexer.
-import Graphics.Implicit.ExtOpenScad.Parser.Lexer (whiteSpace, matchLet, matchTok, matchColon, matchComma, surroundedBy, matchIdentifier, matchEQ, matchNE, matchLE, matchLT, matchGE, matchGT)
+import           Graphics.Implicit.ExtOpenScad.Parser.Lexer (matchColon,
+                                                             matchComma,
+                                                             matchEQ, matchGE,
+                                                             matchGT,
+                                                             matchIdentifier,
+                                                             matchLE, matchLT,
+                                                             matchLet, matchNE,
+                                                             matchTok,
+                                                             surroundedBy,
+                                                             whiteSpace)
 
 -- Let us use the old syntax when defining Vars and Names.
 pattern Var :: String -> Expr
@@ -31,52 +59,51 @@ pattern Name :: String -> GIED.Pattern
 pattern Name n = GIED.Name (Symbol n)
 
 -- We represent the priority or 'fixity' of different types of expressions
--- by the ExprIdx argument, with A1 as the highest.
+-- by the order of parser application.
 
 expr0 :: GenParser Char st Expr
-expr0 = exprN A1
-
--- what state in the expression parser tree we are inside of.
-data ExprIdx = A1 | A2 | A3 | A4 | A5 | A6 | A7 | A8 | A9 | A10 | A11 | A12
-
-exprN :: ExprIdx -> GenParser Char st Expr
+expr0 = ternary
 
 -- match the ternary (1?2:3) operator.
-exprN A1 =
+ternary :: GenParser Char st Expr
+ternary =
     "ternary" ?: do
-        a <- exprN A2
+        a <- logic
         _ <- matchTok '?'
-        b <- exprN A1
+        b <- ternary
         _ <- matchColon
-        c <- exprN A1
+        c <- ternary
         return $ Var "?" :$ [a,b,c]
-    *<|> exprN A2
+    *<|> logic
 
 -- | Match the logical And and Or (&&,||) operators.
-exprN A2 =
+logic :: GenParser Char st Expr
+logic =
     "logical and/or" ?: do
-        a <- exprN A3
+        a <- negation
         symb <-      string "&&"
                 *<|> string "||"
         _ <- whiteSpace
-        b <- exprN A2
+        b <- logic
         return $ Var symb :$ [a,b]
-    *<|> exprN A3
+    *<|> negation
 
 -- | Match the logical negation operator.
-exprN A3 =
+negation :: GenParser Char st Expr
+negation =
     "logical-not" ?: do
         a <- many1 $ matchTok '!'
-        b <- exprN A4
+        b <- comparison
         return $ if length a `mod` 2 == 0
                  then b
                  else Var "!" :$ [b]
-    *<|> exprN A4
+    *<|> comparison
 
 -- match comparison operators.
-exprN A4 =
+comparison :: GenParser Char st Expr
+comparison =
     do
-        firstExpr <- exprN A5
+        firstExpr <- chainedAddition
         otherComparisonsExpr <- many $ do
             comparisonSymb <-
                    matchEQ
@@ -85,7 +112,7 @@ exprN A4 =
               *<|> matchLT
               *<|> matchGE
               *<|> matchGT
-            expr <- exprN A5
+            expr <- chainedAddition
             return (Var comparisonSymb, expr)
         let
             (comparisons, otherExprs) = unzip otherComparisonsExpr
@@ -94,68 +121,75 @@ exprN A4 =
             []  -> firstExpr
             [x] -> x :$ exprs
             _   -> collector "all" $ zipWith3 (\c e1 e2 -> c :$ [e1,e2]) comparisons exprs (tail exprs)
-    *<|> exprN A5
+    *<|> chainedAddition
 
 -- match sequences of addition and subtraction.
-exprN A5 =
+chainedAddition :: GenParser Char st Expr
+chainedAddition =
     "addition/subtraction" ?: do
         -- Similar to multiply & divide
         -- eg. "1+2+3-4-5+6-7"
         --     [[1],[2],[3,4,5],[6,7]]
         exprs <- sepBy1
-            (sepBy1 (exprN A6) (try $ matchTok '-'))
+            (sepBy1 append (try $ matchTok '-'))
             (try $ matchTok '+')
         let sub a b = Var "-" :$ [a, b]
         return . collector "+" $ map (foldl1 sub) exprs
-    *<|> exprN A6
+    *<|> append
 
 -- match string addition (++) operator.
-exprN A6 =
+append :: GenParser Char st Expr
+append =
     "append" ?: do
-        exprs <- sepBy1 (exprN A7) (try $ string "++" >> whiteSpace)
+        exprs <- sepBy1 modulo (try $ string "++" >> whiteSpace)
         return $ collector "++" exprs
-    *<|> exprN A7
+    *<|> modulo
 
 -- match remainder (%) operator.
-exprN A7 =
+modulo :: GenParser Char st Expr
+modulo =
     "modulo" ?: do
-        exprs <- sepBy1 (exprN A8) (try $ matchTok '%')
+        exprs <- sepBy1 multiplication (try $ matchTok '%')
         let mod' a b = Var "%" :$ [a, b]
         return $ foldl1 mod' exprs
-    *<|> exprN A8
+    *<|> multiplication
 
 -- match sequences of multiplication and division.
-exprN A8 =
+multiplication :: GenParser Char st Expr
+multiplication =
     "multiplication/division" ?: do
         -- outer list is multiplication, inner division.
         -- eg. "1*2*3/4/5*6*7/8"
         --     [[1],[2],[3,4,5],[6],[7,8]]
         exprs <- sepBy1
-            (sepBy1 (exprN A9) (try $ matchTok '/'))
+            (sepBy1 power (try $ matchTok '/'))
             (try $ matchTok '*')
         let div' a b = Var "/" :$ [a, b]
         return . collector "*" $ map (foldl1 div') exprs
-    *<|> exprN A9
+    *<|> power
 
 -- match power-of (^) operator.
-exprN A9 =
+power :: GenParser Char st Expr
+power =
     "exponentiation" ?: do
-        a <- exprN A10
-        b <- matchTok '^' >> exprN A9
+        a <- signs
+        b <- matchTok '^' >> power
         return $ Var "^" :$ [a,b]
-    *<|> exprN A10
+    *<|> signs
 
 -- match a leading (+) or (-) operator.
-exprN A10 =
+signs :: GenParser Char st Expr
+signs =
     "negation" ?: do
-        expr <- matchTok '-' >> exprN A11
+        expr <- matchTok '-' >> variables
         return $ Var "negate" :$ [expr]
     *<|> do
-        matchTok '+' >> exprN A11
-    *<|> exprN A11
+        matchTok '+' >> variables
+    *<|> variables
 
 -- | parse operations that start with a variable name, including variable reference..
-exprN A11 =
+variables :: GenParser Char st Expr
+variables =
     do
         obj <- variable
         args <- option [] (
@@ -180,10 +214,11 @@ exprN A11 =
                               (Just s,  Just e )  -> \l -> Var "splice" :$ [l, s, e]
                  )
         return $ foldl (\a b -> b a) obj (args ++ mods)
-    *<|> exprN A12
+    *<|> bracketed
 
 -- | Parse parentheses, lists, vectors, and vector/list generators.
-exprN A12 =
+bracketed :: GenParser Char st Expr
+bracketed =
          literals
     *<|> "vector/list/brackets" ?: do
             -- eg. [ 3, a, a+1, b, a*b] or ( 1, 2, 3)
@@ -199,14 +234,14 @@ exprN A12 =
     *<|> "vector/list generator" ?: do
         -- eg.  [ a : 1 : a + 10 ]
         _ <- matchTok '['
-        expr1 <- expr0
+        e1 <- expr0
         _     <- matchColon
         exprs <- do
-                   expr2 <- expr0
-                   expr3 <- optionMaybe (matchColon >> expr0)
-                   return $ case expr3 of
-                      Just n  -> [expr1, expr2, n]
-                      Nothing -> [expr1, LitE $ ONum 1.0, expr2]
+                   e2 <- expr0
+                   e3 <- optionMaybe (matchColon >> expr0)
+                   return $ case e3 of
+                      Just n  -> [e1, e2, n]
+                      Nothing -> [e1, LitE $ ONum 1.0, e2]
         _ <- matchTok ']'
         return $ collector "list_gen" exprs
     *<|> letExpr
