@@ -4,7 +4,7 @@
 
 -- Allow us to use explicit foralls when writing function type declarations.
 {-# LANGUAGE ExplicitForAll #-}
-
+{-# LANGUAGE OverloadedStrings #-}
 -- FIXME: required. why?
 {-# LANGUAGE ViewPatterns #-}
 
@@ -14,7 +14,9 @@
 
 module Graphics.Implicit.ExtOpenScad.Util.OVal(OTypeMirror, (<||>), fromOObj, toOObj, divideObjs, caseOType, oTypeStr, getErrors) where
 
-import Prelude(Maybe(Just, Nothing), Bool(True, False), Either(Left,Right), Char, String, (==), fromInteger, floor, ($), (.), map, error, (++), show, head, flip, filter, not, return, head)
+import Prelude(Maybe(Just, Nothing), Bool(True, False), Either(Left,Right), Char, (==), fromInteger, floor, ($), (.), map, error, (++), show, flip, filter, not, return)
+import qualified Data.List as L
+import Data.Text (head, unpack, pack, Text)
 
 import Graphics.Implicit.Definitions(ℝ, ℕ, SymbolicObj2, SymbolicObj3, fromℕtoℝ)
 
@@ -65,14 +67,20 @@ instance OTypeMirror Char where
     fromOObj (OString str) = Just $ head str
     fromOObj _ = Nothing
     {-# INLINABLE fromOObj #-}
-    fromOObjList (OString str) = Just str
+    fromOObjList (OString str) = Just $ unpack str
     fromOObjList _ = Nothing
-    toOObj a = OString [a]
+    toOObj a = OString $ pack [a]
 
 instance (OTypeMirror a) => OTypeMirror [a] where
     fromOObj = fromOObjList
     {-# INLINABLE fromOObj #-}
     toOObj list = OList $ map toOObj list
+
+instance OTypeMirror Text where
+    fromOObj (OString s) = Just s
+    fromOObj _ = Nothing
+    {-# INLINABLE fromOObj #-}
+    toOObj a = OString a
 
 instance (OTypeMirror a) => OTypeMirror (Maybe a) where
     fromOObj a = Just $ fromOObj a
@@ -120,7 +128,7 @@ instance (OTypeMirror a, OTypeMirror b) => OTypeMirror (Either a b) where
     toOObj (Left  x) = toOObj x
 
 -- A string representing each type.
-oTypeStr :: OVal -> String
+oTypeStr :: OVal -> Text 
 oTypeStr OUndefined         = "Undefined"
 oTypeStr (OBool          _ ) = "Bool"
 oTypeStr (ONum           _ ) = "Number"
@@ -134,8 +142,8 @@ oTypeStr (OError         _ ) = "Error"
 oTypeStr (OObj2          _ ) = "2D Object"
 oTypeStr (OObj3          _ ) = "3D Object"
 
-getErrors :: OVal -> Maybe String
-getErrors (OError er) = Just $ head er
+getErrors :: OVal -> Maybe Text 
+getErrors (OError er) = Just  $ L.head er
 getErrors (OList l)   = msum $ map getErrors l
 getErrors _           = Nothing
 

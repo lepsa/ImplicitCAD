@@ -10,7 +10,7 @@ module ExecSpec.Util
        ) where
 
 -- be explicit about where we get things from.
-import Prelude (String)
+import Data.Text (Text)
 
 -- The datatype of positions in our world.
 import Graphics.Implicit.Definitions (ℝ)
@@ -25,7 +25,7 @@ import Test.Hspec (Expectation, shouldReturn)
 
 -- An operator for expressions for "the left side should evaluate to the right side."
 infixr 1 -->
-(-->) :: String -> OVal -> Expectation
+(-->) :: Text -> OVal -> Expectation
 (-->) source value =
   runExpr source `shouldReturn` (value, [])
 

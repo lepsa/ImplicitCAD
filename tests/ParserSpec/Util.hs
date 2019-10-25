@@ -3,6 +3,9 @@
 -- Copyright 2015 2016, Mike MacHenry (mike.machenry@gmail.com)
 -- Released under the GNU AGPLV3+, see LICENSE
 
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 -- Utilities
 module ParserSpec.Util
        ( (-->)
@@ -39,9 +42,9 @@ import Graphics.Implicit.Definitions (ℝ)
 -- Expressions, symbols, and values in the OpenScad language.
 import Graphics.Implicit.ExtOpenScad.Definitions (Expr(LitE, (:$), Var, ListE, LamE), Symbol(Symbol), OVal(ONum, OBool, OString, OUndefined), Pattern)
 
-import Text.Parsec (ParseError, parse, manyTill, anyChar, eof)
-
-import Text.Parsec.String (Parser)
+import Text.Megaparsec (ParseErrorBundle, parse, manyTill, anySingle, eof, MonadParsec, Parsec)
+import Data.Text (Text, pack)
+import Data.Void (Void)
 
 import Control.Applicative ((<$>), (<*>))
 
@@ -52,11 +55,14 @@ import Data.Either (Either(Right))
 -- The expression parser entry point.
 import Graphics.Implicit.ExtOpenScad.Parser.Expr (expr0)
 
+parse' :: Parsec Void Text a -> String -> Text -> Either (ParseErrorBundle Text Void) a
+parse' = parse
+
 -- An operator for expressions for "the left side should parse to the right side."
 infixr 1 -->
-(-->) :: String -> Expr -> Expectation
+(-->) :: Text -> Expr -> Expectation
 (-->) source expr =
-  parse (expr0 <* eof) "<expr>" source `shouldBe` Right expr
+  parse' (expr0 <* eof) "<expr>" source `shouldBe` Right expr
 
 -- | Types
 
@@ -70,7 +76,7 @@ num x
 bool :: Bool -> Expr
 bool = LitE . OBool
 
-stringLiteral :: String -> Expr
+stringLiteral :: Text -> Expr
 stringLiteral = LitE . OString
 
 undefined :: Expr
@@ -96,15 +102,15 @@ append = oapp "++"
 plus = oapp "+"
 
 -- | We need two different kinds of application functions, one for operators, and one for functions.
-oapp,fapp :: String -> [Expr] -> Expr
+oapp,fapp :: Text -> [Expr] -> Expr
 oapp name args = Var (Symbol name) :$ args
 fapp name args = Var (Symbol name) :$ [ListE args]
 
 lambda :: [Pattern] -> Expr -> [Expr] -> Expr
 lambda params expr args = LamE params expr :$ args
 
-parseWithLeftOver :: Parser a -> String -> Either ParseError (a, String)
-parseWithLeftOver p = parse ((,) <$> p <*> leftOver) ""
+parseWithLeftOver :: Parsec Void Text a -> Text -> Either (ParseErrorBundle Text Void) (a, Text)
+parseWithLeftOver p = parse' ((,) <$> p <*> leftOver) ""
   where
-    leftOver :: Parser String
-    leftOver = manyTill anyChar eof
+    leftOver :: MonadParsec Void Text m => m Text 
+    leftOver = pack <$> manyTill anySingle eof

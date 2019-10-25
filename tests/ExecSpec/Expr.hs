@@ -4,6 +4,7 @@
 
 -- Allow us to use shorter forms of Var and Name.
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module ExecSpec.Expr (exprExec) where
 

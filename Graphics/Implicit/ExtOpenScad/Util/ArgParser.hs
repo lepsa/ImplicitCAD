@@ -4,6 +4,7 @@
 
 -- Allow us to use explicit foralls when writing function type declarations.
 {-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- FIXME: why is this required?
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -11,8 +12,11 @@
 module Graphics.Implicit.ExtOpenScad.Util.ArgParser (argument, doc, defaultTo, example, test, eulerCharacteristic, argMap) where
 
 -- imported twice, once qualified. null from Data.Map conflicts with null from Prelude.
-import Prelude(String, Maybe(Just, Nothing), ($), (++), concat, show, error, return, map, snd, filter, (.), fst, foldl1, not, (&&))
+import Prelude(Maybe(Just, Nothing), ($), (<>), show, error, return, map, snd, filter, (.), fst, foldl1, not, (&&))
 import qualified Prelude as P (null)
+
+import Data.Text (Text, pack)
+import Data.Foldable (fold)
 
 import Graphics.Implicit.ExtOpenScad.Definitions (ArgParser(AP, APTest, APBranch, APTerminator, APFailIf, APExample), OVal (OError), TestInvariant(EulerCharacteristic), Symbol, VarLookup(VarLookup))
 
@@ -41,15 +45,15 @@ argument name =
             val :: Maybe desiredType
             val = fromOObj oObjVal
             errmsg = case oObjVal of
-                OError errs -> "error in computing value for argument " ++ show name
-                             ++ ": " ++ concat errs
-                _   ->  "arg " ++ show oObjVal ++ " not compatible with " ++ show name
+                OError errs -> "error in computing value for argument " <> pack (show name)
+                             <> ": " <> fold errs
+                _   ->  "arg " <> pack (show oObjVal) <> " not compatible with " <> pack (show name)
         -- Using /= Nothing would require Eq desiredType
         APFailIf (isNothing val) errmsg $ APTerminator $ fromJust val
 {-# INLINABLE argument #-}
 
 -- | Inline documentation.
-doc :: forall a. ArgParser a -> String -> ArgParser a
+doc :: forall a. ArgParser a -> Text -> ArgParser a
 doc (AP name defMaybeVal _ next) newDoc = AP name defMaybeVal newDoc next
 doc _ _ = error "Impossible!"
 
@@ -60,11 +64,11 @@ defaultTo (AP name _ doc' next) newDefVal =
 defaultTo _ _ = error "Impossible!"
 
 -- | An inline example.
-example :: String -> ArgParser ()
+example :: Text -> ArgParser ()
 example str = APExample str (return ())
 
 -- | Inline test and combinators.
-test :: String -> ArgParser ()
+test :: Text -> ArgParser ()
 test str = APTest str [] (return ())
 
 eulerCharacteristic :: ArgParser a -> ℕ -> ArgParser a
@@ -78,16 +82,16 @@ eulerCharacteristic _ _ = error "Impossible!"
 argMap ::
     [(Maybe Symbol, OVal)]      -- ^ arguments
     -> ArgParser a              -- ^ ArgParser to apply them to
-    -> (Maybe a, [String])      -- ^ (result, error messages)
+    -> (Maybe a, [Text])        -- ^ (result, error messages)
 argMap args = argMap2 unnamedArgs (VarLookup $ fromList namedArgs) where
     unnamedArgs = map snd $ filter (isNothing . fst) args
     namedArgs   = map (first fromJust) $ filter (isJust . fst) args
 
-argMap2 :: [OVal] -> VarLookup -> ArgParser a -> (Maybe a, [String])
+argMap2 :: [OVal] -> VarLookup -> ArgParser a -> (Maybe a, [Text])
 argMap2 unnamedArgs namedArgs (APBranch branches) =
     foldl1 merge solutions where
         solutions = map (argMap2 unnamedArgs namedArgs) branches
-        merge :: forall a. (Maybe a, [String]) -> (Maybe a, [String]) -> (Maybe a, [String])
+        merge :: forall a. (Maybe a, [Text]) -> (Maybe a, [Text]) -> (Maybe a, [Text])
         merge a@(Just _, []) _ = a
         merge _ b@(Just _, []) = b
         merge a@(Just _, _) _ = a
@@ -105,7 +109,7 @@ argMap2 unnamedArgs (VarLookup namedArgs) (AP name fallback _ f) =
             x:xs -> argMap2 xs (VarLookup namedArgs) (f x)
             []   -> case fallback of
                 Just b  -> argMap2 [] (VarLookup namedArgs) (f b)
-                Nothing -> (Nothing, ["No value and no default for argument " ++ show name])
+                Nothing -> (Nothing, ["No value and no default for argument " <> pack (show name)])
 
 -- FIXME: don't use map.null here, wrapp it in StateC.hs.
 -- FIXME: generate a warning.

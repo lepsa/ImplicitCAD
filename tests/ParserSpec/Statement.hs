@@ -4,11 +4,12 @@
 
 -- Allow us to use shorter forms of Var and Name.
 {-# LANGUAGE PatternSynonyms #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Statement related hspec tests.
 module ParserSpec.Statement (statementSpec) where
 
-import Prelude (String, Maybe(Just, Nothing), Bool(True), ($))
+import Prelude (Maybe(Just, Nothing), Bool(True), ($))
 
 import Test.Hspec (Spec, Expectation, shouldBe, it, describe)
 
@@ -25,15 +26,17 @@ import Graphics.Implicit.Definitions (Fastℕ)
 
 import Data.Either (Either(Right))
 
+import Data.Text (Text)
+
 -- Let us use the old syntax when defining Vars and Names.
-pattern Var :: String -> Expr
+pattern Var :: Text -> Expr
 pattern Var  s = GIED.Var  (Symbol s)
-pattern Name :: String -> Pattern
+pattern Name :: Text -> Pattern
 pattern Name n = GIED.Name (Symbol n)
 
 -- | an expectation that a string is equivalent to a statement.
 infixr 1 -->
-(-->) :: String -> [StatementI] -> Expectation
+(-->) :: Text -> [StatementI] -> Expectation
 (-->) source stmts =
     parseProgram "noname" source `shouldBe` Right stmts
 
@@ -46,7 +49,7 @@ single :: Statement StatementI -> [StatementI]
 single st = [StatementI (SourcePosition 1 1 "noname") st]
 
 -- | A function call.
-call :: String -> Fastℕ -> [(Maybe Symbol, Expr)] -> [StatementI] -> StatementI
+call :: Text -> Fastℕ -> [(Maybe Symbol, Expr)] -> [StatementI] -> StatementI
 call name column args stmts = StatementI (SourcePosition 1 column "noname") (ModuleCall (Symbol name) args stmts)
 
 -- | Test assignments.

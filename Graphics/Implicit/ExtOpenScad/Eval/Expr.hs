@@ -2,9 +2,13 @@
 -- Copyright (C) 2016, Julia Longtin (julial@turinglace.com)
 -- Released under the GNU AGPLV3+, see LICENSE
 
+{-# LANGUAGE OverloadedStrings #-}
+
 module Graphics.Implicit.ExtOpenScad.Eval.Expr (evalExpr, matchPat) where
 
-import Prelude (String, Maybe(Just, Nothing), IO, concat, ($), map, return, zip, (!!), const, (++), foldr, concatMap, (.), (<$>))
+import Prelude (Maybe(Just, Nothing), IO, concat, ($), map, return, zip, (!!), const, (<>), foldr, concatMap, (.), (<$>))
+
+import Data.Text (Text)
 
 import Graphics.Implicit.ExtOpenScad.Definitions (
                                                   Pattern(Name, ListP, Wild),
@@ -32,22 +36,22 @@ import Control.Monad (zipWithM, mapM, forM, mapM_)
 
 import Control.Monad.State (StateT, get, modify, liftIO, runStateT)
 
-newtype ExprState = ExprState (VarLookup, [String], [Message], SourcePosition)
+newtype ExprState = ExprState (VarLookup, [Text], [Message], SourcePosition)
 type StateE = StateT ExprState IO
 
 -- Add a message to our list of messages contained in the StatE monad.
-addMessage :: MessageType -> SourcePosition -> String -> StateE ()
+addMessage :: MessageType -> SourcePosition -> Text -> StateE ()
 addMessage mtype pos text = addMesg $ Message mtype pos text
   where
     addMesg :: Message -> StateE ()
-    addMesg = modify . (\message (ExprState (a, b, messages, c)) -> ExprState (a, b, messages ++ [message], c))
+    addMesg = modify . (\message (ExprState (a, b, messages, c)) -> ExprState (a, b, messages <> [message], c))
 
 -- Log an error condition.
-errorE :: SourcePosition -> String -> StateE ()
+errorE :: SourcePosition -> Text -> StateE ()
 errorE = addMessage Error
 
 -- | Return the names of all of the patterns in the given pattern.
-patVars :: Pattern -> [String]
+patVars :: Pattern -> [Text]
 patVars (Name (Symbol name)) = [name]
 patVars (ListP pats) = concatMap patVars pats
 patVars Wild = []
@@ -83,7 +87,7 @@ evalExpr' (Var (Symbol name)) = do
         (_, Just pos) -> return (!! pos)
         (Just val, _) -> return $ const val
         _             -> do
-          errorE spos ("Variable " ++ name ++ " not in scope")
+          errorE spos ("Variable " <> name <> " not in scope")
           return $ const OUndefined
 
 -- Evaluate a literal value.
@@ -104,16 +108,16 @@ evalExpr' (fexpr :$ argExprs) = do
                 (Nothing, Nothing) -> app' f l where
                     app' (OFunc f') (x:xs) = app (f' x) xs
                     app' a [] = a
-                    app' x _ = OError ["Can't apply arguments to " ++ oTypeStr x]
+                    app' x _ = OError ["Can't apply arguments to " <> oTypeStr x]
                 (Just err, _     ) -> OError [err]
                 (_,      Just err) -> OError [err]
 
 -- Evaluate a lambda function.
 evalExpr' (LamE pats fexpr) = do
     fparts <- forM pats $ \pat -> do
-        modify (\(ExprState (a,b,c,d)) -> ExprState (a, patVars pat ++ b,c,d))
+        modify (\(ExprState (a,b,c,d)) -> ExprState (a, patVars pat <> b,c,d))
         return $ \f xss -> OFunc $ \val -> case patMatch pat val of
-            Just xs -> f (xs ++ xss)
+            Just xs -> f (xs <> xss)
             Nothing -> OError ["Pattern match failed"]
     fval <- evalExpr' fexpr
     return $ foldr ($) fval fparts

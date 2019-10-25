@@ -8,7 +8,7 @@
 -- An executor, which parses openscad code, and executes it.
 module Graphics.Implicit.ExtOpenScad (runOpenscad) where
 
-import Prelude(String, Either(Left, Right), IO, ($), fmap, return, (++))
+import Prelude(Either(Left, Right), IO, ($), fmap, return, (<>), (.))
 
 import Graphics.Implicit.Definitions (SymbolicObj2, SymbolicObj3)
 
@@ -24,7 +24,8 @@ import Graphics.Implicit.ExtOpenScad.Eval.Constant (addConstants)
 
 import Graphics.Implicit.ExtOpenScad.Util.OVal (divideObjs)
 
-import Text.Parsec.Error (errorPos, errorMessages, showErrorMessages)
+import Text.Megaparsec (errorBundlePretty, bundlePosState, pstateSourcePos)
+import Data.Text (pack, Text)
 
 import Control.Monad (mapM_)
 
@@ -33,18 +34,18 @@ import Control.Monad.State.Lazy (runStateT)
 import System.Directory (getCurrentDirectory)
 
 -- | Small wrapper of our parser to handle parse errors, etc.
-runOpenscad :: ScadOpts -> [String] -> String -> IO (VarLookup, [SymbolicObj2], [SymbolicObj3], [Message])
+runOpenscad :: ScadOpts -> [Text] -> Text -> IO (VarLookup, [SymbolicObj2], [SymbolicObj3], [Message])
 runOpenscad scadOpts constants source =
     let
         rearrange :: (t, CompState) -> (VarLookup, [SymbolicObj2], [SymbolicObj3], [Message])
         rearrange (_, CompState (varlookup, ovals, _, messages, _)) = (varlookup, obj2s, obj3s, messages) where
                                   (obj2s, obj3s, _) = divideObjs ovals
-        show' err = showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" (errorMessages err)
-        mesg e = Message SyntaxError (sourcePosition $ errorPos e) $ show' e
+        show' = pack . errorBundlePretty 
+        mesg e = Message SyntaxError (sourcePosition . pstateSourcePos $ bundlePosState e) $ show' e
     in do
       (initialObjects, initialMessages) <- addConstants constants
       case parseProgram "" source of
-        Left e -> return (initialObjects, [], [], [mesg e] ++ initialMessages)
+        Left e -> return (initialObjects, [], [], [mesg e] <> initialMessages)
         Right sts -> fmap rearrange
             $ (\sts' -> do
                 path <- getCurrentDirectory

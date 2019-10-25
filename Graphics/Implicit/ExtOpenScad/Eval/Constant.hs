@@ -2,9 +2,13 @@
 -- Copyright (C) 2016, Julia Longtin (julial@turinglace.com)
 -- Released under the GNU AGPLV3+, see LICENSE
 
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+
 module Graphics.Implicit.ExtOpenScad.Eval.Constant (addConstants, runExpr) where
 
-import Prelude (String, Maybe(Just, Nothing), IO, ($), return, (+), Either (Left, Right), Char, Bool(False))
+import Prelude (Maybe(Just, Nothing), IO, ($), return, (+), Either (Left, Right), Bool(False), (.))
 
 import Graphics.Implicit.Definitions (Fastℕ)
 
@@ -34,30 +38,29 @@ import Control.Monad.State (liftIO, runStateT)
 
 import System.Directory (getCurrentDirectory)
 
-import Text.Parsec (SourceName, parse, ParseError)
-
-import Text.Parsec.String (GenParser)
-
-import Text.Parsec.Error (errorMessages, showErrorMessages)
+import Text.Megaparsec (parse, MonadParsec, ParseErrorBundle, errorBundlePretty)
+import System.IO (FilePath)
+import Data.Text (Text, pack)
+import Data.Void (Void)
 
 import Graphics.Implicit.ExtOpenScad.Parser.Util (patternMatcher)
 
 import Graphics.Implicit.ExtOpenScad.Parser.Lexer (matchTok)
 
 -- | Define variables used during the extOpenScad run.
-addConstants :: [String] -> IO (VarLookup, [Message])
+addConstants :: [Text] -> IO (VarLookup, [Message])
 addConstants constants = do
   path <- getCurrentDirectory
   let scadOpts = ScadOpts False False
   (_, CompState (varLookup, _, _, messages, _)) <- liftIO $ runStateT (execAssignments constants 0) (CompState (defaultObjects, [], path, [], scadOpts))
   return (varLookup, messages)
   where
-    execAssignments :: [String] -> Fastℕ  -> StateC ()
+    execAssignments :: [Text] -> Fastℕ  -> StateC ()
     execAssignments [] _ = return ()
     execAssignments (assignment:xs) count = do
       let
         pos = (SourcePosition count 1 "cmdline_constants")
-        show' err = showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" (errorMessages err)
+        show' = pack . errorBundlePretty
       case parseAssignment "cmdline_constant" assignment of
         Left e -> do
           addMessage SyntaxError pos $ show' e
@@ -67,10 +70,10 @@ addConstants constants = do
             Nothing -> return ()
             Just pat -> modifyVarLookup $ varUnion pat
       execAssignments xs (count+1)
-    parseAssignment :: SourceName -> String -> Either ParseError (Pattern, Expr)
+    parseAssignment :: FilePath -> Text -> Either (ParseErrorBundle Text Void) (Pattern, Expr)
     parseAssignment = parse assignment
       where
-        assignment :: GenParser Char st (Pattern, Expr)
+        assignment :: MonadParsec e Text m => m (Pattern, Expr)
         assignment = do
           key <- patternMatcher
           _ <- matchTok '='
@@ -78,23 +81,23 @@ addConstants constants = do
           return (key, expr)
 
 -- | Evaluate an expression, returning only it's result.
-runExpr :: String -> IO (OVal, [Message])
+runExpr :: Text -> IO (OVal, [Message])
 runExpr expression = do
   path <- getCurrentDirectory
   let scadOpts = ScadOpts False False
   (res, CompState (_, _, _, messages, _)) <- liftIO $ runStateT (execExpression expression) (CompState (defaultObjects, [], path, [], scadOpts))
   return (res, messages)
   where
-    execExpression :: String -> StateC OVal
+    execExpression :: Text -> StateC OVal
     execExpression expr = do
       let
         pos = (SourcePosition 1 1 "raw_expression")
-        show' err = showErrorMessages "or" "unknown parse error" "expecting" "unexpected" "end of input" (errorMessages err)
+        show' = pack . errorBundlePretty 
       case parseExpression "raw_expression" expr of
         Left e -> do
           addMessage SyntaxError pos $ show' e
           return OUndefined
         Right parseRes -> evalExpr pos parseRes
-    parseExpression :: SourceName -> String -> Either ParseError Expr
+    parseExpression :: FilePath -> Text -> Either (ParseErrorBundle Text Void) Expr
     parseExpression = parse expr0
 

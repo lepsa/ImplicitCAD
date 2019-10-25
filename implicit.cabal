@@ -21,7 +21,7 @@ Library
                   base >= 3 && < 5,
                   filepath,
                   directory,
-                  parsec,
+                  megaparsec,
                   parallel,
                   containers,
                   deepseq,
@@ -35,8 +35,11 @@ Library
                   blaze-svg,
                   storable-endian,
                   JuicyPixels,
-                  transformers
-
+                  transformers,
+                  scientific,
+                  parser-combinators
+    -- Allows ghci to work whith -Wmissing-import-lists
+    default-extensions: NoImplicitPrelude
     Ghc-options:
                 -O2
                 -optc-O3
@@ -46,8 +49,6 @@ Library
                 -- for debugging.
                 -Wall
                 -Wcompat
-                -Wmonomorphism-restriction
-                -Wmissing-local-signatures
                 -Wmissing-export-lists
                 -Wmissing-import-lists
                 -Wmissing-home-modules
@@ -133,7 +134,6 @@ Executable extopenscad
                -Wall
                -Wcompat
                -Wmonomorphism-restriction
-               -Wmissing-local-signatures
                -Wmissing-export-lists
                -Wmissing-import-lists
                -Wmissing-home-modules
@@ -155,7 +155,6 @@ Executable docgen
                -Wall
                -Wcompat
                -Wmonomorphism-restriction
-               -Wmissing-local-signatures
                -Wmissing-export-lists
                -Wmissing-import-lists
                -Wmissing-home-modules
@@ -188,7 +187,6 @@ Executable implicitsnap
                -Wall
                -Wcompat
                -Wmonomorphism-restriction
-               -Wmissing-local-signatures
                -Wmissing-export-lists
                -Wmissing-import-lists
                -Wmissing-home-modules
@@ -213,7 +211,6 @@ Executable Benchmark
                -Wall
                -Wcompat
                -Wmonomorphism-restriction
-               -Wmissing-local-signatures
                -Wmissing-export-lists
                -Wmissing-import-lists
                -Wmissing-home-modules
@@ -229,8 +226,10 @@ Test-suite test-implicit
                   base,
                   hspec,
                   implicit,
-                  parsec
+                  megaparsec,
+                  text
     Main-is: Main.hs
+    default-extensions: NoImplicitPrelude
     Hs-source-dirs: tests
     Ghc-options:
                 -O2
@@ -240,7 +239,6 @@ Test-suite test-implicit
                 -Wall
                 -Wcompat
                 -Wmonomorphism-restriction
-                -Wmissing-local-signatures
                 -Wmissing-export-lists
                 -Wmissing-import-lists
                 -Wmissing-home-modules
@@ -261,7 +259,7 @@ Benchmark parser-bench
     Build-depends:
                   base,
                   criterion,
-                  parsec,
+                  megaparsec,
                   implicit
     Main-is: parser-bench.hs
     Hs-source-dirs: programs
@@ -273,7 +271,6 @@ Benchmark parser-bench
                 -Wall
                 -Wcompat
                 -Wmonomorphism-restriction
-                -Wmissing-local-signatures
                 -Wmissing-export-lists
                 -Wmissing-import-lists
                 -Wmissing-home-modules
