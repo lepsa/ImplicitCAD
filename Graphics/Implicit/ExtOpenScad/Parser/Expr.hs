@@ -9,7 +9,7 @@
 -- A parser for a numeric expressions.
 module Graphics.Implicit.ExtOpenScad.Parser.Expr(expr0) where
 
-import Prelude (Char, Maybe(Nothing, Just), String, ($), (<>), id, foldl, foldr, (==), length, head, (&&), (<$>), (<*>), (*>), (<*), flip, (.), pure)
+import Prelude (Char, Maybe(Nothing, Just), String, ($), (<>), id, foldl, foldr, (<$>), (<*>), (*>), (<*), flip, (.), pure)
 
 import Graphics.Implicit.ExtOpenScad.Definitions (Expr(LamE, LitE, ListE, (:$)), OVal(ONum, OUndefined), Symbol(Symbol))
 
@@ -132,20 +132,23 @@ variableish = "variable" ?:
 
 -- | Parse parentheses, lists, vectors, and vector/list generators.
 vectorListParentheses :: GenParser Char st Expr
-vectorListParentheses =
-         "vector/list/parentheses" ?: do
-            -- eg. [ 3, a, a+1, b, a*b] - list
-            --     ( 1, 2, 3) - list
-            --     (a+1) - parenthesized expression.
-            o <- oneOf "[(" <* whiteSpace
-            exprs <- sepBy expr0 matchComma
-              <* if o == '['
-                 then matchTok ']'
-                 else matchTok ')'
-            pure $ if o == '(' && length exprs == 1
-                     then head exprs
-                     else ListE exprs
-    *<|> "vector/list generator" ?: do
+vectorListParentheses = parentheses *<|> listGen
+  where
+    single =
+      matchTok '(' *> whiteSpace *> expr0 <* matchTok ')'
+    list = ListE <$> (listParen *<|> listBracket)
+    listBracket =
+      matchTok '[' *> whiteSpace *> sepBy expr0 matchComma <* matchTok ']'
+    listParen =
+      matchTok '(' *> whiteSpace *> sepBy expr0 matchComma <* matchTok ')'
+    -- eg. [ 3, a, a+1, b, a*b] - list
+    --     ( 1, 2, 3) - list
+    --     (a+1) - parenthesized expression.
+    parentheses =
+      "vector/list/parentheses" ?: do
+         single *<|> list
+    listGen =
+      "vector/list generator" ?: do
         -- eg.  [ a : 1 : a + 10 ]
         --      [ a : a + 10 ]
         -- FIXME: clearly, these have a numeric context, and should fail to parse for non-numeric contents.
