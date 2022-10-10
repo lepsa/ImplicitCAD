@@ -79,7 +79,7 @@ rmaximum ::
 rmaximum _ [] = 0
 rmaximum _ [a] = a
 rmaximum r [a,b] = rmax r a b
-rmaximum r (sortBy (flip compare) -> (a:b:_:_)) = rmax r a b
+rmaximum r (sortBy (flip compare) -> (a:b:_)) = rmax r a b
 rmaximum _ _ = error "impossible."  -- (and with dependent types we could prove it!)
 
 -- | Like rmin but on a list.
@@ -90,7 +90,7 @@ rminimum ::
 rminimum _ [] = 0
 rminimum _ [a] = a
 rminimum r [a,b] = rmin r a b
-rminimum r (sort -> (a:b:_:_)) = rmin r a b
+rminimum r (sort -> (a:b:_)) = rmin r a b
 rminimum _ _ = error "impossible."
 
 -- | Pack the given objects in a box the given size.

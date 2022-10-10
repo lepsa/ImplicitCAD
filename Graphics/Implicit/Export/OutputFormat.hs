@@ -2,6 +2,8 @@
 -- Implicit CAD. Copyright (C) 2011, Christopher Olah (chris@colah.ca)
 -- Copyright (C) 2014 2015, Julia Longtin (julial@turinglace.com)
 -- Released under the GNU AGPLV3+, see LICENSE
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE TupleSections #-}
 
 module Graphics.Implicit.Export.OutputFormat
   ( OutputFormat (SVG, SCAD, PNG, GCode, ASCIISTL, STL, THREEJS, OBJ, DXF),
@@ -17,16 +19,14 @@ module Graphics.Implicit.Export.OutputFormat
   )
 where
 
-import Prelude (Bool, Eq, FilePath, Maybe, Read (readsPrec), Show(show), String, drop, error, flip, length, tail, take, ($), (<>), (==))
-import Control.Applicative ((<$>))
+import Prelude (Bool, Eq, FilePath, Maybe, Read (readsPrec), String, drop, flip, length, tail, take, ($), (==), pure, (>>=), maxBound, (<$>), Show, Enum, Bounded, minBound, (.))
 -- For making the format guesser case insensitive when looking at file extensions.
 import Data.Char (toLower)
 import Data.Default.Class (Default(def))
 import Data.List (lookup, elem)
-import Data.Maybe (fromMaybe)
-import Data.Tuple (swap)
 -- For handling input/output files.
 import System.FilePath (takeExtensions)
+import Data.List.NonEmpty (NonEmpty ((:|)), toList, head)
 
 -- | A type serving to enumerate our output formats.
 data OutputFormat
@@ -40,7 +40,7 @@ data OutputFormat
   | OBJ
   | DXF
 --  | 3MF
-  deriving (Show, Eq)
+  deriving (Show, Eq, Enum, Bounded)
 
 instance Default OutputFormat where
   def = STL
@@ -70,30 +70,31 @@ formatIs3D :: OutputFormat -> Bool
 formatIs3D = flip elem formats3D
 
 -- | A list mapping file extensions to output formats.
+-- Allow GHC to do the heavy lifting for us, rather than
+-- doing it by hand.
 formatExtensions :: [(String, OutputFormat)]
-formatExtensions =
-  [ ("svg", SVG),
-    ("scad", SCAD),
-    ("png", PNG),
-    ("ngc", GCode),
-    ("gcode", GCode),
-    ("ascii.stl", ASCIISTL),
-    ("asciistl", ASCIISTL),
-    ("stl", STL),
-    ("three.js", THREEJS),
-    ("threejs", THREEJS),
-    ("obj", OBJ),
-    ("dxf", DXF)
---  ("3mf", 3MF)
-  ]
-
--- | Lookup an output format for a given output file. Throw an error if one cannot be found.
-guessOutputFormat :: FilePath -> OutputFormat
-guessOutputFormat fileName =
-  fromMaybe (error $ "Unrecognized output format: " <> ext) $
-    readOutputFormat $ tail ext
+formatExtensions = [minBound .. maxBound] >>= toList . go
   where
-    ext = takeExtensions fileName
+    go e = (, e) <$> getFormatExtensions e
+
+-- | A list mapping file extensions to output formats.
+-- Formats must have at least one extension, so non-empty it is!
+getFormatExtensions :: OutputFormat -> NonEmpty String
+getFormatExtensions = \case
+  SVG      -> pure "svg"
+  SCAD     -> pure "scad"
+  PNG      -> pure "png"
+  GCode    -> pure "ngc"
+  ASCIISTL -> "ascii.stl" :| pure "asciistl"
+  STL      -> pure "stl"
+  THREEJS  -> "three.js" :| pure "threejs"
+  OBJ      -> pure "obj"
+  DXF      -> pure "dxf"
+  -- 3MF      -> pure "3mf"
+
+-- | Lookup an output format for a given output file.
+guessOutputFormat :: FilePath -> Maybe OutputFormat
+guessOutputFormat fileName = readOutputFormat . tail $ takeExtensions fileName
 
 -- | Try to look up an output format from a supplied extension.
 readOutputFormat :: String -> Maybe OutputFormat
@@ -114,6 +115,4 @@ instance Read OutputFormat where
 
 -- | Get filename extension for `OutputFormat`
 formatExtension :: OutputFormat -> String
-formatExtension fmt = fromMaybe
-  (error $ "No extension defined for OutputFormat " <> show fmt)
-  $ lookup fmt (swap <$> formatExtensions)
+formatExtension = head . getFormatExtensions

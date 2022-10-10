@@ -12,7 +12,7 @@ module Graphics.Implicit.ObjectUtil.GetImplicitShared (getImplicitShared, normal
 
 import {-# SOURCE #-} Graphics.Implicit.Primitives (Object(getImplicit'))
 
-import Prelude (flip, (-), (*), (>), (<), (&&), (/), product, abs, (**), fmap, (.), negate, ($), const)
+import Prelude (flip, (-), (*), (>), (<), (&&), (/), product, abs, (**), (.), negate, ($), const, (<$>))
 
 import Graphics.Implicit.Definitions
     ( objectRounding, ObjectContext, SharedObj(Empty, Full, Complement, UnionR, IntersectR, DifferenceR, Translate, Scale, Mirror, Shell, Outset, EmbedBoxedObj, WithRounding), ComponentWiseMultable((⋯/)), ℝ, minℝ )
@@ -54,11 +54,11 @@ getImplicitShared ctx (Complement symbObj) =
 getImplicitShared ctx (UnionR _ []) =
   getImplicitShared @obj ctx Empty
 getImplicitShared ctx (UnionR r symbObjs) = \p ->
-  rminimum r $ fmap (flip (getImplicit' ctx) p) symbObjs
+  rminimum r $ flip (getImplicit' ctx) p <$> symbObjs
 getImplicitShared ctx (IntersectR _ []) =
   getImplicitShared @obj ctx Full
 getImplicitShared ctx (IntersectR r symbObjs) = \p ->
-  rmaximum r $ fmap (flip (getImplicit' ctx) p) symbObjs
+  rmaximum r $ flip (getImplicit' ctx) p <$> symbObjs
 getImplicitShared ctx (DifferenceR _ symbObj []) =
   getImplicit' ctx symbObj
 getImplicitShared ctx (DifferenceR r symbObj symbObjs) =
@@ -66,8 +66,7 @@ getImplicitShared ctx (DifferenceR r symbObj symbObjs) =
     in
       \p -> do
         let
-          maxTail = rmaximum r
-                  $ fmap (flip (getImplicitShared ctx) p . Complement) symbObjs
+          maxTail = rmaximum r $ flip (getImplicitShared ctx) p . Complement <$> symbObjs
         if maxTail > -minℝ && maxTail < minℝ
           then rmax r (headObj p) minℝ
           else rmax r (headObj p) maxTail

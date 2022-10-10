@@ -14,7 +14,7 @@ import Graphics.Implicit.Definitions
     ( objectRounding, ObjectContext, SymbolicObj2(Square, Circle, Polygon, Rotate2, Transform2, Shared2), SharedObj (Empty), Obj2, ℝ2, ℝ )
 
 import Graphics.Implicit.MathUtil
-    ( distFromLineSeg, rmaximum )
+    ( distFromLineSeg, rmax )
 
 import Data.List (nub)
 import Graphics.Implicit.ObjectUtil.GetImplicitShared (getImplicitShared)
@@ -38,7 +38,7 @@ circularPairs as = zip as $ drop 1 $ cycle as
 getImplicit2 :: ObjectContext -> SymbolicObj2 -> Obj2
 -- Primitives
 getImplicit2 ctx (Square (V2 dx dy)) =
-    \(V2 x y) -> rmaximum (objectRounding ctx) [abs (x-dx/2) - dx/2, abs (y-dy/2) - dy/2]
+    \(V2 x y) -> rmax (objectRounding ctx) (abs (x-dx/2) - dx/2) $ abs (y-dy/2) - dy/2
 getImplicit2 _ (Circle r) =
     \(V2 x y) -> sqrt (x * x + y * y) - r
 -- FIXME: stop ignoring rounding for polygons.
@@ -69,8 +69,8 @@ getImplicit2 ctx (Transform2 m symbObj) =
     \vin ->
     let
         obj = getImplicit2 ctx symbObj
-        augment (V2 x y) = (V3 x y 1)
-        normalize (V3 x y w) = (V2 (x/w) (y/w))
+        augment (V2 x y) = V3 x y 1
+        normalize (V3 x y w) = V2 (x/w) (y/w)
     in
-        obj $ (normalize . ((Linear.inv33 m) Linear.!*) . augment $ vin)
+        obj (normalize . (Linear.inv33 m Linear.!*) . augment $ vin)
 getImplicit2 ctx (Shared2 obj) = getImplicitShared ctx obj

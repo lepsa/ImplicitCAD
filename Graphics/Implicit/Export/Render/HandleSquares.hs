@@ -5,11 +5,11 @@
 
 module Graphics.Implicit.Export.Render.HandleSquares (mergedSquareTris) where
 
-import Prelude((+), foldMap, (<>), ($), fmap, concat, (.), (==), compare, error, otherwise, concatMap)
+import Prelude((+), foldMap, (<>), ($), fmap, concat, (.), (==), compare, otherwise, concatMap, (<$>))
 
 import Graphics.Implicit.Definitions (TriangleMesh(TriangleMesh, getTriangles), Triangle(Triangle))
 
-import Graphics.Implicit.Export.Render.Definitions (TriSquare(Tris, Sq))
+import Graphics.Implicit.Export.Render.Definitions (TriSquare(Tris, Sq), Sq (Sq'))
 import Linear ( V2(V2), (*^), (^*) )
 
 import GHC.Exts (groupWith)
@@ -67,22 +67,24 @@ mergedSquareTris sqTris =
         triTriangles :: [Triangle]
         triTriangles = [tri | Tris tris <- sqTris, tri <- getTriangles tris ]
         -- We actually want to work on the quads, so we find those
-        squaresFromTris :: [TriSquare]
-        squaresFromTris = [ Sq x y z q | Sq x y z q <- sqTris ]
+        squaresFromTris :: [Sq]
+        squaresFromTris = [ s | Sq s <- sqTris ]
 
         -- Collect squares that are on the same plane.
-        planeAligned = groupWith (\(Sq basis z _ _) -> (basis,z)) squaresFromTris
+        planeAligned :: [[Sq]]
+        planeAligned = groupWith (\(Sq' basis z _ _) -> (basis,z)) squaresFromTris
+
         -- For each plane:
         -- Select for being the same range on X and then merge them on Y
         -- Then vice versa.
-        joined :: [[TriSquare]]
+        joined :: [[Sq]]
         joined = fmap
-            ( concatMap joinXaligned . groupWith (\(Sq _ _ xS _) -> xS)
-            . concatMap joinYaligned . groupWith (\(Sq _ _ _ yS) -> yS)
-            . concatMap joinXaligned . groupWith (\(Sq _ _ xS _) -> xS))
+            ( concatMap joinXaligned . groupWith (\(Sq' _ _ xS _) -> xS)
+            . concatMap joinYaligned . groupWith (\(Sq' _ _ _ yS) -> yS)
+            . concatMap joinXaligned . groupWith (\(Sq' _ _ xS _) -> xS))
             planeAligned
         -- Merge them back together, and we have the desired reult!
-        finishedSquares = concat joined
+        finishedSquares = Sq <$> concat joined
 
     in
         -- merge them to triangles, and combine with the original triangles.
@@ -90,41 +92,39 @@ mergedSquareTris sqTris =
 
 -- And now for the helper functions that do the heavy lifting...
 
-joinXaligned :: [TriSquare] -> [TriSquare]
-joinXaligned quads@((Sq b z xS _):_) =
-    let
-        orderedQuads = sortBy
-            (\(Sq _ _ _ (V2 ya _)) (Sq _ _ _ (V2 yb _)) -> compare ya yb)
-            quads
-        mergeAdjacent (pres@(Sq _ _ _ (V2 y1a y2a)) : next@(Sq _ _ _ (V2 y1b y2b)) : others)
-          | y2a == y1b = mergeAdjacent (Sq b z xS (V2 y1a y2b) : others)
-          | y1a == y2b = mergeAdjacent (Sq b z xS (V2 y1b y2a) : others)
-          | otherwise  = pres : mergeAdjacent (next : others)
-        mergeAdjacent a = a
-    in
-        mergeAdjacent orderedQuads
-joinXaligned (Tris _:_) = error "Tried to join y aligned triangles."
+joinXaligned :: [Sq] -> [Sq]
 joinXaligned [] = []
-
-joinYaligned :: [TriSquare] -> [TriSquare]
-joinYaligned quads@((Sq b z _ yS):_) =
+joinXaligned quads@((Sq' b z xS _):_) =
     let
         orderedQuads = sortBy
-            (\(Sq _ _ (V2 xa _) _) (Sq _ _ (V2 xb _) _) -> compare xa xb)
+            (\(Sq' _ _ _ (V2 ya _)) (Sq' _ _ _ (V2 yb _)) -> compare ya yb)
             quads
-        mergeAdjacent (pres@(Sq _ _ (V2 x1a x2a) _) : next@(Sq _ _ (V2 x1b x2b) _) : others)
-          | x2a == x1b = mergeAdjacent (Sq b z (V2 x1a x2b) yS : others)
-          | x1a == x2b = mergeAdjacent (Sq b z (V2 x1b x2a) yS : others)
+        mergeAdjacent (pres@(Sq' _ _ _ (V2 y1a y2a)) : next@(Sq' _ _ _ (V2 y1b y2b)) : others)
+          | y2a == y1b = mergeAdjacent (Sq' b z xS (V2 y1a y2b) : others)
+          | y1a == y2b = mergeAdjacent (Sq' b z xS (V2 y1b y2a) : others)
           | otherwise  = pres : mergeAdjacent (next : others)
         mergeAdjacent a = a
     in
         mergeAdjacent orderedQuads
-joinYaligned (Tris _:_) = error "Tried to join y aligned triangles."
+
+joinYaligned :: [Sq] -> [Sq]
 joinYaligned [] = []
+joinYaligned quads@((Sq' b z _ yS):_) =
+    let
+        orderedQuads = sortBy
+            (\(Sq' _ _ (V2 xa _) _) (Sq' _ _ (V2 xb _) _) -> compare xa xb)
+            quads
+        mergeAdjacent (pres@(Sq' _ _ (V2 x1a x2a) _) : next@(Sq' _ _ (V2 x1b x2b) _) : others)
+          | x2a == x1b = mergeAdjacent (Sq' b z (V2 x1a x2b) yS : others)
+          | x1a == x2b = mergeAdjacent (Sq' b z (V2 x1b x2a) yS : others)
+          | otherwise  = pres : mergeAdjacent (next : others)
+        mergeAdjacent a = a
+    in
+        mergeAdjacent orderedQuads
 
 -- Deconstruct a square into two triangles.
 squareToTri :: TriSquare -> [Triangle]
-squareToTri (Sq (b1,b2,b3) z (V2 x1 x2) (V2 y1 y2)) =
+squareToTri (Sq (Sq' (b1,b2,b3) z (V2 x1 x2) (V2 y1 y2))) =
     let
         zV = b3 ^* z
         (x1V, x2V) = (x1 *^ b1, x2 *^ b1)
